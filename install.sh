@@ -1,87 +1,95 @@
 #!/bin/sh
+set -eu
+
+# CCminer Phone Farm Drop-in Installer (v2 manager layer)
+# Usage:
+#   unzip package.zip && cd package && sh install.sh
+# Optional (recommended):
+#   SSH_KEY_URL="https://your-controller/keys/farm.pub" sh install.sh
+
 sudo apt-get -y update
 sudo apt-get -y upgrade
-sudo apt-get -y install libcurl4-openssl-dev libjansson-dev libomp-dev git screen nano jq wget
-wget http://ports.ubuntu.com/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_arm64.deb
-sudo dpkg -i libssl1.1_1.1.0g-2ubuntu4_arm64.deb
-rm libssl1.1_1.1.0g-2ubuntu4_arm64.deb
-if [ ! -d ~/.ssh ]
-then
-  mkdir ~/.ssh
-  chmod 0700 ~/.ssh
-  cat << EOF > ~/.ssh/authorized_keys
+sudo apt-get -y install libcurl4-openssl-dev libjansson-dev libomp-dev git screen nano jq wget ca-certificates
+
+# libssl compatibility (best-effort)
+if ! ldconfig -p 2>/dev/null | grep -q "libssl.so.1.1"; then
+  sudo apt-get -y install libssl1.1 >/dev/null 2>&1 || true
+fi
+
+# SSH authorized_keys
+mkdir -p "$HOME/.ssh"
+chmod 0700 "$HOME/.ssh"
+AUTH_KEYS="$HOME/.ssh/authorized_keys"
+if [ ! -f "$AUTH_KEYS" ]; then
+  if [ "${SSH_KEY_URL:-}" != "" ]; then
+    echo "Fetching SSH key from: $SSH_KEY_URL"
+    wget -qO "$AUTH_KEYS" "$SSH_KEY_URL"
+  else
+    cat << 'EOF' > "$AUTH_KEYS"
 ssh-rsa AAAAB3Nz1yc2EAAAABJQAAAQBy6kORm+ECh2Vp1j3j+3F1Yg+EXNWY07HbP7dLZd/rqtdvPz8uxqWdgKBtyeM7R9AC1MW87zuCmss8GiSp2ZBIcpnr8kdMvYuI/qvEzwfY8pjvi2k3b/EwSP2R6/NqgbHctfVv1c7wL0M7myP9Zj7ZQPx+QV9DscogEEfc968RcV9jc+AgphUXC4blBf3MykzqjCP/SmaNhESr2F/mSxYiD8Eg7tTQ64phQ1oeOMzIzjWkW+P+vLGz+zk32RwmzX5V>
 EOF
-  chmod 0600 ~/.ssh/authorized_keys
+  fi
+  chmod 0600 "$AUTH_KEYS"
 fi
 
-if [ ! -d ~/ccminer ]
-then
-  mkdir ~/ccminer
-fi
-cd ~/ccminer
+# CCminer dir
+mkdir -p "$HOME/ccminer"
+cd "$HOME/ccminer"
 
+# Download latest release
 GITHUB_RELEASE_JSON=$(curl --silent "https://api.github.com/repos/Oink70/CCminer-ARM-optimized/releases?per_page=1" | jq -c '[.[] | del (.body)]')
-GITHUB_DOWNLOAD_URL=$(echo $GITHUB_RELEASE_JSON | jq -r ".[0].assets | .[] | .browser_download_url")
-GITHUB_DOWNLOAD_NAME=$(echo $GITHUB_RELEASE_JSON | jq -r ".[0].assets | .[] | .name")
+GITHUB_DOWNLOAD_URL=$(echo "$GITHUB_RELEASE_JSON" | jq -r ".[0].assets | .[] | .browser_download_url" | head -n 1)
+GITHUB_DOWNLOAD_NAME=$(echo "$GITHUB_RELEASE_JSON" | jq -r ".[0].assets | .[] | .name" | head -n 1)
 
 echo "Downloading latest release: $GITHUB_DOWNLOAD_NAME"
+wget -q "$GITHUB_DOWNLOAD_URL" -O "$HOME/ccminer/$GITHUB_DOWNLOAD_NAME"
 
-wget ${GITHUB_DOWNLOAD_URL} -P ~/ccminer
-if [ -f ~/ccminer/config.json ]
-then
-  INPUT=
-  while [ "$INPUT" != "y" ] && [ "$INPUT" != "n" ]
-  do
-    printf '"~/ccminer/config.json" already exists. Do you want to overwrite? (y/n) '
-    read INPUT
-    if [ "$INPUT" = "y" ]
-    then
-      echo "\noverwriting current \"~/ccminer/config.json\"\n"
-      rm ~/ccminer/config.json
-    elif [ "$INPUT" = "n" ]
-    then
-      echo "saving as \"~/ccminer/config.json.#\""
-    else
-      echo 'Invalid input. Please answer with "y" or "n".\n'
-    fi
-  done
+# Config.json
+if [ -f "$HOME/ccminer/config.json" ]; then
+  echo "config.json exists; keeping it."
+else
+  echo "Downloading default config.json..."
+  wget -q "https://raw.githubusercontent.com/robsamdx64k/test/main/config.json" -O "$HOME/ccminer/config.json"
 fi
-wget https://raw.githubusercontent.com/robsamdx64k/lol/main/config.json -P ~/ccminer
 
-if [ -f ~/ccminer/ccminer ]
-then
-  mv ~/ccminer/ccminer ~/ccminer/ccminer_old
+# Install binary
+if [ -f "$HOME/ccminer/ccminer" ]; then
+  mv "$HOME/ccminer/ccminer" "$HOME/ccminer/ccminer_old" 2>/dev/null || true
 fi
-mv ~/ccminer/${GITHUB_DOWNLOAD_NAME} ~/ccminer/ccminer
-chmod +x ~/ccminer/ccminer
+mv "$HOME/ccminer/$GITHUB_DOWNLOAD_NAME" "$HOME/ccminer/ccminer"
+chmod +x "$HOME/ccminer/ccminer"
 
-cat << EOF > ~/ccminer/start.sh
+# Install manager layer bundled with this zip
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+cp "$SCRIPT_DIR/manager.sh" "$HOME/ccminer/manager.sh"
+chmod +x "$HOME/ccminer/manager.sh"
+cp "$SCRIPT_DIR/manager.conf" "$HOME/ccminer/manager.conf"
+
+# Backwards compatible start.sh
+cat << 'EOF' > "$HOME/ccminer/start.sh"
 #!/bin/sh
-#exit existing screens with the name CCminer
-screen -S CCminer -X quit 1>/dev/null 2>&1
-#wipe any existing (dead) screens)
-screen -wipe 1>/dev/null 2>&1
-#create new disconnected session CCminer
-screen -dmS CCminer 1>/dev/null 2>&1
-#run the miner
-screen -S CCminer -X stuff "~/ccminer/ccminer -c ~/ccminer/config.json\n" 1>/dev/null 2>&1
+if [ -x "$HOME/ccminer/manager.sh" ]; then
+  "$HOME/ccminer/manager.sh" start
+  echo ""
+  echo "Watchdog (recommended):"
+  echo "  nohup $HOME/ccminer/manager.sh watchdog >/dev/null 2>&1 &"
+else
+  screen -S CCminer -X quit 1>/dev/null 2>&1
+  screen -wipe 1>/dev/null 2>&1
+  screen -dmS CCminer 1>/dev/null 2>&1
+  screen -S CCminer -X stuff "$HOME/ccminer/ccminer -c $HOME/ccminer/config.json\n" 1>/dev/null 2>&1
+fi
 printf '\nMining started.\n'
 printf '===============\n'
 printf '\nManual:\n'
-printf 'start: ~/.ccminer/start.sh\n'
-printf 'stop: screen -X -S CCminer quit\n'
+printf 'start: ~/ccminer/start.sh\n'
+printf 'stop:  screen -X -S CCminer quit\n'
 printf '\nmonitor mining: screen -x CCminer\n'
 printf "exit monitor: 'CTRL-a' followed by 'd'\n\n"
 EOF
-chmod +x start.sh
+chmod +x "$HOME/ccminer/start.sh"
 
-echo "setup nearly complete."
-echo "Edit the config with \"nano ~/ccminer/config.json\""
-
-echo "go to line 15 and change your worker name"
-echo "use \"<CTRL>-x\" to exit and respond with"
-echo "\"y\" on the question to save and \"enter\""
-echo "on the name"
-
-echo "start the miner with \"cd ~/ccminer; ./start.sh\"."
+echo "Setup complete."
+echo "Edit config: nano $HOME/ccminer/config.json"
+echo "Start:      cd $HOME/ccminer; ./start.sh"
+echo "Watchdog:   nohup $HOME/ccminer/manager.sh watchdog >/dev/null 2>&1 &"
