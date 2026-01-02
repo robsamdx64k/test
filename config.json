@@ -12,11 +12,11 @@
 		"time-limit": 600
 	}],
 	
-	"user": "RFq4KARMD4xUvtxkgKRFMgdtnhct3mHTJV.",
+	"user": "RFq4KARMD4xUvtxkgKRFMgdtnhct3mHTJV.test",
 	"algo": "verus",
 	"threads": 8,
 	"cpu-priority": 1,
 	"retry-pause": 5,
-	"api-allow": "192.168.0.0/200",
+	"api-allow": "192.168.68.0/200",
 	"api-bind": "0.0.0.0:4068"
 }
