@@ -1,0 +1,22 @@
+{
+	"pools":[
+	{
+		"name": "us.vipor",
+        "url": "stratum+tcp://us.vipor.net:5040",
+		"timeout": 150
+	},
+	{
+		"name": "usse vipor",
+        "url": "stratum+tcp://usse.vipor.net:5040",
+		"timeout": 60,
+		"time-limit": 600
+	}],
+	
+	"user": "RFq4KARMD4xUvtxkgKRFMgdtnhct3mHTJV.",
+	"algo": "verus",
+	"threads": 8,
+	"cpu-priority": 1,
+	"retry-pause": 5,
+	"api-allow": "192.168.0.0/200",
+	"api-bind": "0.0.0.0:4068"
+}

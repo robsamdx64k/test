@@ -1,0 +1,4 @@
+# Put one host per line. You can also specify host:port
+# Example:
+# 10.0.0.101
+# 10.0.0.102
